@@ -18,5 +18,6 @@
     ,"part1/tuner/ram_1r1w_sync.sv"
     ,"part1/tuner/my_counter.sv"
     ,"provided/duplicator.sv"
+    ,"part1/tuner/comparator.sv"
     ]
 }

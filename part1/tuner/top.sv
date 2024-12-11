@@ -179,13 +179,281 @@ module top
 
    // Your code goes here
 
-   // You may need to drive output audio to ensure that the I2S2
-   // module keeps working.   
-   assign valid_lo = valid_li;
-   assign ready_lo = ready_li;
+  // Sinusoids for all 11 notes --------------------------------------------------------------------------
+  logic [11:0] sine_a;
+  sinusoid #(
+    .sampling_freq_p(44.1 * 10 ** 3),
+    .note_freq_p(880)
+  )
+  sinusoid_inst1 (
+    .clk_i(clk_o),
+    .reset_i(reset_r),
+    .ready_i(valid_li & ready_lo),    
+    .data_o(sine_a),
+    .valid_o()
+  );
 
-   // You should drive right_lo and left_lo
-   assign data_right_lo = data_right_li;
-   assign data_left_lo = data_left_li;
-                         
+  logic [11:0] sine_bflat;
+  sinusoid #(
+    .sampling_freq_p(44.1 * 10 ** 3),
+    .note_freq_p(939)
+  )
+  sinusoid_inst2 (
+    .clk_i(clk_o),
+    .reset_i(reset_r),
+    .ready_i(valid_li & ready_lo),    
+    .data_o(sine_bflat),
+    .valid_o()
+  );
+
+  logic [11:0] sine_b;
+  sinusoid #(
+    .sampling_freq_p(44.1 * 10 ** 3),
+    .note_freq_p(988)
+  ) sinusoid_inst3 (
+    .clk_i(clk_o),
+    .reset_i(reset_r),
+    .ready_i(valid_li & ready_lo),    
+    .data_o(sine_b),
+    .valid_o()
+  );
+
+  logic [11:0] sine_c;
+  sinusoid #(
+    .sampling_freq_p(44.1 * 10 ** 3),
+    .note_freq_p(523)
+  ) sinusoid_inst4 (
+    .clk_i(clk_o),
+    .reset_i(reset_r),
+    .ready_i(valid_li & ready_lo),    
+    .data_o(sine_c),
+    .valid_o()
+  );
+
+  logic [11:0] sine_csharp;
+  sinusoid #(
+    .sampling_freq_p(44.1 * 10 ** 3),
+    .note_freq_p(559)
+  ) sinusoid_inst5 (
+    .clk_i(clk_o),
+    .reset_i(reset_r),
+    .ready_i(valid_li & ready_lo),    
+    .data_o(sine_csharp),
+    .valid_o()
+  );
+
+  logic [11:0] sine_d;
+  sinusoid #(
+    .sampling_freq_p(44.1 * 10 ** 3),
+    .note_freq_p(589)
+  ) sinusoid_inst6 (
+    .clk_i(clk_o),
+    .reset_i(reset_r),
+    .ready_i(valid_li & ready_lo),    
+    .data_o(sine_d),
+    .valid_o()
+  );
+
+  logic [11:0] sine_eflat;
+  sinusoid #(
+    .sampling_freq_p(44.1 * 10 ** 3),
+    .note_freq_p(622.3)
+  ) sinusoid_inst7 (
+    .clk_i(clk_o),
+    .reset_i(reset_r),
+    .ready_i(valid_li & ready_lo),    
+    .data_o(sine_eflat),
+    .valid_o()
+  );
+
+  logic [11:0] sine_f;
+  sinusoid #(
+    .sampling_freq_p(44.1 * 10 ** 3),
+    .note_freq_p(701)
+  ) sinusoid_inst8 (
+    .clk_i(clk_o),
+    .reset_i(reset_r),
+    .ready_i(valid_li & ready_lo),    
+    .data_o(sine_f),
+    .valid_o()
+  );
+
+  logic [11:0] sine_fsharp;
+  sinusoid #(
+    .sampling_freq_p(44.1 * 10 ** 3),
+    .note_freq_p(748)
+  ) sinusoid_inst9 (
+    .clk_i(clk_o),
+    .reset_i(reset_r),
+    .ready_i(valid_li & ready_lo),    
+    .data_o(sine_fsharp),
+    .valid_o()
+  );
+
+  logic [11:0] sine_g;
+  sinusoid #(
+    .sampling_freq_p(44.1 * 10 ** 3),
+    .note_freq_p(784)
+  ) sinusoid_inst10 (
+    .clk_i(clk_o),
+    .reset_i(reset_r),
+    .ready_i(valid_li & ready_lo),    
+    .data_o(sine_g),
+    .valid_o()
+  );
+
+  logic [11:0] sine_gsharp;
+  sinusoid #(
+    .sampling_freq_p(44.1 * 10 ** 3),
+    .note_freq_p(833)
+  ) sinusoid_inst11 (
+    .clk_i(clk_o),
+    .reset_i(reset_r),
+    .ready_i(valid_li & ready_lo),    
+    .data_o(sine_gsharp),
+    .valid_o()
+  );
+
+  // test for audio from sinusoids
+  /*
+  assign valid_lo = valid_li;
+  assign data_left_lo = {sine_curr, 12'b0};
+  assign data_right_lo = data_left_lo; 
+  */
+
+  // sinusoid logic
+  logic [11:0] sine_curr;
+  logic [3:0] sine_counter; 
+  logic [0:0] dup_valid_o, dup_ready_i; // output of duplicator
+
+  // renamed counter due to naming conflict warning
+  my_counter 
+    #(.max_val_p(11)) // width_p becomes 4
+  counter_inst1 (
+    .clk_i(clk_o),
+    .reset_i(reset_r),
+    .up_i(dup_valid_o & dup_ready_i),    // check if rv is from I2S2 or delaybuffer
+    .down_i(1'b0),
+    .count_o(sine_counter)
+  );
+
+  // mux for sinusoid input to mac
+  always_comb begin
+    sine_curr = '0;
+
+    if (sine_counter == 0) begin      // A
+      sine_curr = sine_a;
+    end else if (sine_counter == 1) begin  // Bb
+      sine_curr = sine_bflat;
+    end else if (sine_counter == 2) begin  // B
+      sine_curr = sine_b;
+    end else if (sine_counter == 3) begin  // C
+      sine_curr = sine_c;
+    end else if (sine_counter == 4) begin  // C#
+      sine_curr = sine_csharp;
+    end else if (sine_counter == 5) begin  // D
+      sine_curr = sine_d;
+    end else if (sine_counter == 6) begin  // Eb
+      sine_curr = sine_eflat;
+    end else if (sine_counter == 7) begin  // F
+      sine_curr = sine_f;
+    end else if (sine_counter == 8) begin  // F#
+      sine_curr = sine_fsharp;
+    end else if (sine_counter == 9) begin // G
+      sine_curr = sine_g;
+    end else if (sine_counter == 10) begin // G#
+      sine_curr = sine_gsharp;
+    end
+  end
+
+  // Duplicator for I2S2
+  logic [11:0] data_left_dup;
+  duplicator # (
+    .width_p(12),
+    .duplications_p(11))  // Check this, want to duplicate 11 times for each note
+  dup_inst (
+    .clk_i(clk_o),
+    .reset_i(reset_r),
+    .data_i(data_left_li[23:12]),
+    .valid_i(valid_li),
+    .ready_o(ready_lo),
+    .valid_o(dup_valid_o),
+    .data_o(data_left_dup),
+    .ready_i(dup_ready_i)
+  );
+
+  // mac ------------------------------------------------------------------------------------------------
+  logic signed [31:0] mac_o, abs_delaybuff_o;
+  logic signed [35:0] delaybuff_o;
+  //logic [0:0] mac_valid_i, mac_ready_o;
+  logic [16:0] counter_o;
+  mac
+    #(.int_in_lp(1),                  
+      .frac_in_lp(11),
+      .int_out_lp(10),
+      .frac_out_lp(22))
+  mac_inst (
+    .clk_i(clk_o),
+    .reset_i(reset_r | counter_o == 65536),     
+    .a_i(sine_curr), 
+    .b_i(data_left_dup), 
+    .db_i(delaybuff_o[31:0]),  
+    .data_o(mac_o)
+  );
+
+  delaybuffer #(
+    .width_p(36),
+    .delay_p(11))
+  db_inst (
+    .clk_i(clk_o),
+    .reset_i(reset_r | counter_o == 65537),
+    .data_i({sine_counter[3:0], mac_o}),         // append sine idx to mac_o
+    .valid_i(dup_valid_o),
+    .ready_o(dup_ready_i),
+    .valid_o(db_valid_o),
+    .data_o(delaybuff_o),
+    .ready_i(1'b1)
+  );
+  
+  // save and restart logic
+  my_counter 
+    #(.width_p(17)
+     ,.max_val_p(17'd65538))
+  counter_inst2(
+    .clk_i(clk_o),
+    .reset_i(reset_r),
+    .up_i(valid_li & ready_lo),
+    .down_i(1'b0),
+    .count_o(counter_o)
+  );
+
+  logic [35:0] max_accum;
+  assign abs_delaybuff_o = delaybuff_o[31] ? -delaybuff_o[31:0] : delaybuff_o[31:0];
+
+  // comparator
+  always_ff @(posedge clk_o) begin
+    if (reset_r) begin
+      max_accum <= '0;
+    end else begin
+      if (counter_o == 65536) begin
+        max_accum <= '0;
+      end
+      if (db_valid_o) begin
+        if (abs_delaybuff_o > max_accum[31:0]) begin
+          max_accum <= {delaybuff_o[35:32], abs_delaybuff_o};
+        end
+      end
+    end
+  end
+
+  // debugging with led
+  assign led_o[1] = (sine_counter == delaybuff_o[35:32]);
+  assign led_o[5:2] = max_accum[35:32];
+
+  // for note
+  hex2ssd ssd_inst1 (                  
+    .hex_i(max_accum[35:32]),
+    .ssd_o(ssd_o[6:0])
+  );
+
 endmodule

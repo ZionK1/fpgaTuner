@@ -8,25 +8,11 @@ module testbench
   (output logic error_o = 0
   ,output logic pass_o = 0);
 
-   // You can pick these
-   parameter int_in_lp = 1;
-   parameter frac_in_lp = 11;
+   // You can use this 
+   logic [0:0] error;
    
    wire        clk_i;
-   bit         reset_i;
-   wire        _reset_i;
-
-   // Use reset_il to set reset from procedural blocks.
-   bit         reset_il;
-   assign reset_i = _reset_i | reset_il;
-
-
-   // I'm using bit here to get a 0/1 type
-   logic signed [int_in_lp - 1 : - frac_in_lp] audio_il;
-   bit                                valid_il;
-   wire                               ready_o;
-
-   logic [7 : 0]                      ssd_ol;
+   wire        reset_i;
 
    nonsynth_clock_gen
      #(.cycle_time_p(10))
@@ -34,120 +20,98 @@ module testbench
      (.clk_o(clk_i));
 
    nonsynth_reset_gen
-     #(.reset_cycles_lo_p(0)
+     #(.reset_cycles_lo_p(10)
       ,.reset_cycles_hi_p(10))
    rg
      (.clk_i(clk_i)
-     ,.async_reset_o(_reset_i));
+     ,.async_reset_o(reset_i));
 
-   tuner
-     #(.int_in_lp(int_in_lp)
-      ,.frac_in_lp(frac_in_lp)
-      )
+  logic [0:0] db_valid_o;
+  logic [16:0] counter_i;
+  logic [35:0] delaybuff_o, data_o, data_ol;
+
+   // DUT
+   comparator
+      #()
    dut
-     (.clk_i(clk_i)
-     ,.reset_i(reset_i)
+      (.clk_i(clk_i)
+      ,.reset_i(reset_i)
+      ,.db_valid_o(db_valid_o)
+      ,.counter_i(counter_i)
+      ,.delaybuff_o(delaybuff_o) // input here
+      ,.data_o(data_o)
+      );
 
-     ,.audio_i(audio_il)
-     ,.valid_i(valid_il)
-     ,.ready_o(ready_o)
+   // Behavioral model
+   logic [35:0] max_accum;
+   logic signed [31:0] abs_delaybuff_ol;
 
-     ,.ssd_o(ssd_ol)
-     );
-
-   // Track how many handshakes have occured at the input interface.
-   int wr_count;
+   assign abs_delaybuff_ol = delaybuff_o[31] ? -delaybuff_o[31:0] : delaybuff_o[31:0];
 
    always_ff @(posedge clk_i) begin
-      // Only reset wr_count at the very start of simulation
-      if(_reset_i)
-        wr_count <= 0;
-      else 
-        wr_count <= wr_count + (valid_il & (ready_o === 1'b1));
-   end
-
-   // Use done to tell the "tracker" we're done.
-   bit                                 input_done = 0;
-   always @(posedge clk_i) begin
-      // If the input generator is done and the write count is equal
-      // to the read count, then terminate the simulator with a pass.
-      if(input_done) begin
-         `FINISH_WITH_PASS;
+      if (reset_i) begin
+         max_accum <= '0;
+      end else begin
+         if (counter_i == 65536) begin
+               max_accum <= '0;
+         end
+         if (db_valid_o) begin
+               if (abs_delaybuff_ol > max_accum[31:0]) begin
+                  max_accum <= {delaybuff_o[35:32], abs_delaybuff_ol};
+               end
+         end
       end
    end
 
-   // Input Generator
-   // Since it's unsafe to read outputs of a module in an initial
-   // block, sanitize the input/write handshake by capturing it in a
-   // signal we control.
-   bit wr_success;
+   assign data_ol = max_accum;
+   
+   // Checker
    always_ff @(posedge clk_i) begin
-      wr_success <= valid_il & (ready_o === 1'b1);
-   end   
-
-   // Input Interface Watchdog Timer
-   int wr_timeout;
-   always @(posedge clk_i) begin
-      if(reset_i || (valid_il & (ready_o === 1))) begin
-         wr_timeout <= 0;
-      end else if(wr_timeout > 10) begin
-         $error("Timeout on input interface. valid_i was high for 10 cycles with no response.");
-         `FINISH_WITH_FAIL;
-      end else if(valid_il & (ready_o !== 1)) begin
-         wr_timeout <= wr_timeout + 1;
+      if ((data_ol !== data_o)) begin                                       
+        error = 1;
+        $display("Error! Expected: %b, Got: %b", data_ol, data_o); 
       end
    end
 
    initial begin
+      // Call this to set pass_o and error_o to 0.
       `START_TESTBENCH
-      // Leave this code alone, it generates the waveforms
-      // Set input signals to zeros to ensure that dut state is not
-      // polluted by x's
-      valid_il = 1'b0;
-      reset_il = 1'b0;
-      audio_il = '0;
 
+      error = 0;
+      db_valid_o = 0;
+      counter_i = 0;
+      delaybuff_o = 0;
+      
+      // Put your testbench code here. Print all of the test cases and
+      // their correctness.
       @(negedge reset_i);
+      for (int i = 0; i < 17'd65800; i += 4) begin
+        @(negedge clk_i);
 
-      // Wait a few clock cycles
-      repeat(2) @(negedge clk_i);
+        if (i == 264) begin
+          db_valid_o = 0;
+        end else begin
+          db_valid_o = 1;
+        end
 
-      $display();
-      $display("Input Generator, Start.");
+        counter_i = i;
+        delaybuff_o = ~i;
+      end
 
-      // Input sinusoidal audio
-      audio_il = '0;
-      do begin
-         // Randomly decide when to transmit data
-         valid_il = ($urandom_range(0, 1) == 1);
-         if(valid_il) begin
-            // Approx 440 Hz wave.
-            audio_il = $sin(440 * (wr_count * 2 * (2 * $asin(1))) /(44000)) * (1024);
-            $display("%d: %d or %f", wr_count, audio_il, audio_il/1024.0 );
-         end else begin
-            audio_il = 0;
-         end
+      db_valid_o = 0;
+      @(negedge clk_i);
 
-         // If we decided to transmit data, iterate until it was read
-         // into the DUT.
-
-         // wr_success is set in an always_ff block and
-         // indicates a successfull input handshake on the LAST
-         // posedge.
-         do begin
-           @(negedge clk_i);
-         end while((valid_il == 1'b1) && (wr_success == 1'b0));
-
-         valid_il = 0;
-         @(negedge clk_i);
-
-         // Simulate approximately 1 second of time.
-      end while(wr_count < 44000);
-
-      // This will eventually terminate simulation.
-      input_done = 1;
+      // Use FINISH_WITH_FAIL to end the testbench and cause the FAIL message, and signal fail to cocotb
+      // Use FINISH_WITH_PASS to end the testbench and cause the PASS message, and signal pass to cocotb
+      // Calling neither will cause the UNKNOWN message, and cause issues in Cocotb.
+      if (error == 1) begin
+        $display("Test Failed!");
+        `FINISH_WITH_FAIL;
+      end
+      $display("\n\nSuccessfully tested comparator!\n\n");
+      `FINISH_WITH_PASS;
    end
-   
+
    // This block executes after $finish() has been called.
    final begin
       $display("Simulation time is %t", $time);
