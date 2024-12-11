@@ -11,5 +11,12 @@
     ,"provided/dff.sv"
     ,"provided/inv.sv"
     ,"provided/axis_i2s2_synth.v"
+    ,"part1/tuner/sinusoid.sv"
+    ,"part1/tuner/mac.sv"
+    ,"part1/tuner/hex2ssd.sv"
+    ,"part1/tuner/delaybuffer.sv"
+    ,"part1/tuner/ram_1r1w_sync.sv"
+    ,"part1/tuner/my_counter.sv"
+    ,"provided/duplicator.sv"
     ]
 }
